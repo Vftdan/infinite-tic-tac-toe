@@ -309,7 +309,7 @@ addEventListener('load', function() {
 				};
 				
 				var TicTacToeField = function() {
-					this.chunks = Object.create(null);
+					this.reset();
 				};
 				TicTacToeField.Chunk = Chunk;
 				TicTacToeField.prototype = {
@@ -333,6 +333,9 @@ addEventListener('load', function() {
 					setAt: function(x, y, value) {
 						var chunk = this.getChunkFor(x, y, true);
 						return chunk.setGlobal(x, y, value);
+					},
+					reset: function() {
+						this.chunks = Object.create(null);
 					},
 				};
 
@@ -418,18 +421,34 @@ addEventListener('load', function() {
 				}
 				return res;
 			},
+			restartGame: function() {
+				this.won = false;
+				if (this.field)
+					this.field.reset();
+				else
+					this.field = new app.model.TicTacToeField();
+				app.scene._elements.length = 0;
+				app.scene._elements.push(new app.shapes.Grid(1));
+				this.currentPlayer = app.model.CellContent.CROSS;
+				app.scene._elements.push(new app.shapes.TicTacToeSymbols(this.field));
+				app.drawing.drawScene();
+			},
 		},
 	};
 
 	app.canvas.width  = CANVAS_SIZE;
 	app.canvas.height = CANVAS_SIZE;
 	app.drawing.ctx = app.canvas.getContext('2d');
-	document.getElementById('deploy').appendChild(app.canvas);
+	var deploy = document.getElementById('deploy');
+	deploy.appendChild(app.canvas);
 	app.canvas.addEventListener('click', app.ui._clickHandler, false);
-	app.scene._elements.push(new app.shapes.Grid(1));
-	app.model.currentPlayer = app.model.CellContent.CROSS;
-	app.scene._elements.push(new app.shapes.TicTacToeSymbols(
-		app.model.field = new app.model.TicTacToeField()
-	));
-	app.drawing.drawScene();
+	app.model.restartGame();
+
+	var restartButton = document.createElement('input');
+	restartButton.type = 'button';
+	restartButton.value = 'Restart';
+	restartButton.addEventListener('click', function() {
+		app.model.restartGame();
+	}, false);
+	deploy.appendChild(restartButton);
 }, false);
