@@ -254,18 +254,7 @@ addEventListener('load', function() {
 				2: 'Noughts',
 			},
 			currentPlayer: null,
-			_nextPlayer: function() {
-				switch (this.currentPlayer) {
-					case this.CellContent.CROSS:
-						this.currentPlayer = this.CellContent.NOUGHT;
-						break;
-					case this.CellContent.NOUGHT:
-						this.currentPlayer = this.CellContent.CROSS;
-						break;
-					default:
-						console.error('Invalid current player: ' + this.currentPlayer);
-				}
-			},
+			localPlayer: null,
 			TicTacToeField: (function() {
 				var CHUNK_SIDE = 16;
 				var BITS_PER_CELL = 2;
@@ -342,10 +331,9 @@ addEventListener('load', function() {
 				return TicTacToeField;
 			})(),
 			field: null,
-			won: false,
-			WIN_CONDITION_CONSECUTIVE: 5,
+			expectSymbol: false,
 			handleClick: function(pos) {
-				if (this.won)
+				if (!this.expectSymbol)
 					return;
 				var x = Math.floor(pos[0]);
 				var y = Math.floor(pos[1]);
@@ -353,86 +341,254 @@ addEventListener('load', function() {
 					alert('Occupied!');
 					return;
 				}
-				this.field.setAt(x, y, this.currentPlayer);
-				var directions = [
-					[0,  1],
-					[1,  0],
-					[1,  1],
-					[1, -1],
-				];
-				var winLine = null;
-				for (var i = 0; !winLine && i < directions.length; ++i) {
-					winLine = this._checkWinAround([x, y], directions[i]);
-				}
-				if (winLine) {
-					app.scene._elements.push(new app.shapes.LineSegment(winLine[0][0] + .5, winLine[0][1] + .5, winLine[1][0] + .5, winLine[1][1] + .5));
-				}
-				app.drawing.drawScene();
-				if (winLine) {
-					this.won = true;
-					alert(this.playerNames[this.currentPlayer] + ' win!');
-				}
-				this._nextPlayer();
-			},
-			_checkWinAround: function(centerPos, step) {
-				var values = [];
-				var startPos = [
-					centerPos[0] - (this.WIN_CONDITION_CONSECUTIVE - 1) * step[0],
-					centerPos[1] - (this.WIN_CONDITION_CONSECUTIVE - 1) * step[1],
-				];
-				var count = this.WIN_CONDITION_CONSECUTIVE * 2 - 1;
-				var pos = startPos.slice(0);
-				for (var i = 0; i < count; ++i) {
-					values.push(this.field.getAt(pos[0], pos[1]));
-					pos[0] += step[0];
-					pos[1] += step[1];
-				}
-				var seg = this._maxNonZeroConsecutive(values);
-				if (seg[1] < this.WIN_CONDITION_CONSECUTIVE)
-					return null;
-				var startIdx = seg[0];
-				var endIdx = seg[0] + seg[1] - 1;
-				return [
-					[startPos[0] + startIdx * step[0], startPos[1] + startIdx * step[1]],
-					[startPos[0] +   endIdx * step[0], startPos[1] +   endIdx * step[1]],
-				];
-			},
-			_maxNonZeroConsecutive: function(arr) {
-				var res = [-1, 0];  // start, length
-				if (arr.length < 1)
-					return res;
-				var start = 0;
-				var value = arr[0];
-				for (var i = 1; i <= arr.length; ++i) {
-					if (!arr[i] || arr[i] != value) {
-						var length = i - start;
-						if (length > res[1]) {
-							res[0] = start;
-							res[1] = length;
-						}
-						value = arr[i];
-						start = i;
-					}
-				}
-				var length = arr.length - start;
-				if (length > res[1]) {
-					res[0] = start;
-					res[1] = length;
-				}
-				return res;
+				this.expectSymbol = false;
+				this.backends.placeSymbol(x, y);
 			},
 			restartGame: function() {
-				this.won = false;
-				if (this.field)
-					this.field.reset();
-				else
-					this.field = new app.model.TicTacToeField();
-				app.scene._elements.length = 0;
-				app.scene._elements.push(new app.shapes.Grid(1));
-				this.currentPlayer = app.model.CellContent.CROSS;
-				app.scene._elements.push(new app.shapes.TicTacToeSymbols(this.field));
-				app.drawing.drawScene();
+				this.backends.newGame();
 			},
+			handleMessages: function(arr) {
+				var fieldDirty = false;
+				for (var i = 0; i < arr.length; ++i) {
+					var msg = arr[i];
+					switch (msg.method) {
+						case 'clearField':
+							if (this.field)
+								this.field.reset();
+							else
+								this.field = new app.model.TicTacToeField();
+							app.scene._elements.length = 0;
+							app.scene._elements.push(new app.shapes.Grid(1));
+							app.scene._elements.push(new app.shapes.TicTacToeSymbols(this.field));
+							fieldDirty = true;
+							break;
+						case 'placeSymbol':
+							this.field.setAt(msg.x, msg.y, msg.symbol);
+							fieldDirty = true;
+							break;
+						case 'setLocalPlayer':
+							this.localPlayer = msg.player;
+							break;
+						case 'setCurrentPlayer':
+							this.localPlayer = msg.player;
+							break;
+						case 'waitSymbol':
+							this.expectSymbol = true;
+							break;
+						case 'showError':
+							console.error('Received error: ' + msg.text);
+							alert(msg.text);
+							break;
+						case 'winGame':
+							app.scene._elements.push(new app.shapes.LineSegment(msg.start.x + .5, msg.start.y + .5, msg.end.x + .5, msg.end.y + .5));
+							this.won = true;
+							alert(this.playerNames[msg.player] + ' win!');
+							break;
+						default:
+							console.error('Unknown method: ' + obj.method);
+					}
+				}
+				if (fieldDirty)
+					app.drawing.drawScene();
+			},
+			backends: (function() {
+				var localBackend = {
+					_model: {
+						won: false,
+						WIN_CONDITION_CONSECUTIVE: 5,
+						field: null,  // we will store the field content twice to minimize the difference with remote backends
+						expectSymbol: false,
+						currentPlayer: null,
+						_nextPlayer: function() {
+							switch (this.currentPlayer) {
+								case app.model.CellContent.CROSS:
+									this.currentPlayer = app.model.CellContent.NOUGHT;
+									break;
+								case app.model.CellContent.NOUGHT:
+									this.currentPlayer = app.model.CellContent.CROSS;
+									break;
+								default:
+									console.error('Invalid current player: ' + this.currentPlayer);
+							}
+						},
+						tryPlaceSymbol: function(x, y) {
+							if (this.won)
+								return [
+									new localBackend._responseConstructors.ShowError("Game is already over!"),
+								];
+							x |= 0;
+							y |= 0;
+							if (this.field.getAt(x, y)) {
+								return [
+									new localBackend._responseConstructors.ShowError("Occupied!"),
+								];
+							}
+							this.field.setAt(x, y, this.currentPlayer);
+							var result = [
+								new localBackend._responseConstructors.PlaceSymbol(x, y, this.currentPlayer),
+							];
+							var directions = [
+								[0,  1],
+								[1,  0],
+								[1,  1],
+								[1, -1],
+							];
+							var winLine = null;
+							for (var i = 0; !winLine && i < directions.length; ++i) {
+								winLine = this._checkWinAround([x, y], directions[i]);
+							}
+							if (winLine) {
+								result.push(
+									new localBackend._responseConstructors.WinGame(this.currentPlayer, winLine[0], winLine[1])
+								);
+								this.won = true;
+							} else {
+								this._nextPlayer();
+								result.push.apply(result, [  // Trailing commas in functions will not work with browsers that run below ECMAScript 2017
+									new localBackend._responseConstructors.SetLocalPlayer(this.currentPlayer),
+									new localBackend._responseConstructors.SetCurrentPlayer(this.currentPlayer),
+									new localBackend._responseConstructors.WaitSymbol(),
+								]);
+							}
+							return result;
+						},
+						_checkWinAround: function(centerPos, step) {
+							var values = [];
+							var startPos = [
+								centerPos[0] - (this.WIN_CONDITION_CONSECUTIVE - 1) * step[0],
+								centerPos[1] - (this.WIN_CONDITION_CONSECUTIVE - 1) * step[1],
+							];
+							var count = this.WIN_CONDITION_CONSECUTIVE * 2 - 1;
+							var pos = startPos.slice(0);
+							for (var i = 0; i < count; ++i) {
+								values.push(this.field.getAt(pos[0], pos[1]));
+								pos[0] += step[0];
+								pos[1] += step[1];
+							}
+							var seg = this._maxNonZeroConsecutive(values);
+							if (seg[1] < this.WIN_CONDITION_CONSECUTIVE)
+								return null;
+							var startIdx = seg[0];
+							var endIdx = seg[0] + seg[1] - 1;
+							return [
+								[startPos[0] + startIdx * step[0], startPos[1] + startIdx * step[1]],
+								[startPos[0] +   endIdx * step[0], startPos[1] +   endIdx * step[1]],
+							];
+						},
+						_maxNonZeroConsecutive: function(arr) {
+							var res = [-1, 0];  // start, length
+							if (arr.length < 1)
+								return res;
+							var start = 0;
+							var value = arr[0];
+							for (var i = 1; i <= arr.length; ++i) {
+								if (!arr[i] || arr[i] != value) {
+									var length = i - start;
+									if (length > res[1]) {
+										res[0] = start;
+										res[1] = length;
+									}
+									value = arr[i];
+									start = i;
+								}
+							}
+							var length = arr.length - start;
+							if (length > res[1]) {
+								res[0] = start;
+								res[1] = length;
+							}
+							return res;
+						},
+						restartGame: function() {
+							this.won = false;
+							if (this.field)
+								this.field.reset();
+							else
+								this.field = new app.model.TicTacToeField();
+							this.currentPlayer = app.model.CellContent.CROSS;
+							return [
+								new localBackend._responseConstructors.ClearField(),
+								new localBackend._responseConstructors.SetLocalPlayer(1),
+								new localBackend._responseConstructors.SetCurrentPlayer(1),
+								new localBackend._responseConstructors.WaitSymbol(),
+							];
+						},
+					},
+					sendMessage: function(obj) {
+						var handlers = this._messageHandlers;
+						setTimeout(function() {  // run asynchronously
+							var method = obj.method;
+							if (handlers[method])
+								handlers[method](obj);
+							else
+								handlers.__unknown__(obj);
+						}, 0);
+					},
+					_messageHandlers__create: function() {
+						function sendResponse(arr) {
+							for (var i = 0; i < arr.length; ++i)
+								arr[i].method = arr[i].method;  // Make 'method' an own property
+							app.model.handleMessages(arr);
+						}
+						var constructors = this._responseConstructors;
+						var model = this._model;
+						var handlers = {
+							__unknown__: function(obj) {
+								sendResponse([
+									new constructors.ShowError('Unknown method: ' + obj.method),
+								]);
+							},
+							newGame: function(obj) {
+								sendResponse(model.restartGame());
+							},
+							placeSymbol: function(obj) {
+								sendResponse(model.tryPlaceSymbol(obj.x, obj.y));
+							},
+						};
+						this._messageHandlers = Object.assign(Object.create(null), handlers);  // Remove prototype & implicit fields
+						delete this._messageHandlers__create;
+					},
+					_responseConstructors: (function() {
+						var constructors = {
+							ClearField: function() {},
+							PlaceSymbol: function(x, y, symbol) {
+								this.x = x;
+								this.y = y;
+								this.symbol = symbol;
+							},
+							SetLocalPlayer: function(player) {
+								this.player = player;
+							},
+							SetCurrentPlayer: function(player) {
+								this.player = player;
+							},
+							WaitSymbol: function() {},
+							ShowError: function(text) {
+								this.text = text;
+							},
+							WinGame: function(player, startPos, endPos) {
+								this.player = player;
+								this.start = {x: startPos[0], y: startPos[1]};
+								this.end = {x: endPos[0], y: endPos[1]};
+							},
+						};
+						for (var i in constructors)
+							constructors[i].prototype = {method: i[0].toLowerCase() + i.slice(1)};
+						return constructors;
+					})(),
+				};
+				localBackend._messageHandlers__create();
+				return {
+					localBackend: localBackend,
+					currentBackend: localBackend,
+					newGame: function() {
+						this.currentBackend.sendMessage({method: 'newGame'});
+					},
+					placeSymbol: function(x, y) {
+						this.currentBackend.sendMessage({method: 'placeSymbol', x: x, y: y});
+					},
+				};
+			})(),
 		},
 	};
 

@@ -21,9 +21,9 @@ When sending this event, field ui should be locked from placing new symbols by u
 
 ### `placeSymbol`
 
- * `symbol`: `1` for crosses, `2` for noughts
  * `x`
  * `y`
+ * `symbol`: `0` to remove, `1` for crosses, `2` for noughts
 
 ### `setLocalPlayer`
 
