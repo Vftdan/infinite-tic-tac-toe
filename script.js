@@ -230,17 +230,87 @@ addEventListener('load', function() {
 		},
 		ui: {
 			handleClick: function(e) {
-				var pos = app.drawing.unproject(this.clientToCanvasCoords(e.clientX, e.clientY));
+				var pos = this.clientToWorldCoords(e.clientX, e.clientY);
 				app.model.handleClick(pos);
+			},
+			warpPan: function(e, worldPos) {
+				var curWorldPos = this.clientToWorldCoords(e.clientX, e.clientY);
+				var cameraDelta = app.algebra.vecSub(worldPos, curWorldPos);
+				app.camera.origin = app.algebra.vecAdd(app.camera.origin, cameraDelta);
+				app.drawing.drawScene();
 			},
 			clientToCanvasCoords: function(x, y) {
 				var r = app.canvas.getBoundingClientRect();
 				var scale = app.canvas.width / r.width;
 				return [(x - r.left) * scale, (y - r.top) * scale];
 			},
-			_clickHandler: function(e) {
-				return app.ui.handleClick(e);
-			}
+			clientToWorldCoords: function(x, y) {
+				return app.drawing.unproject(this.clientToCanvasCoords(x, y));
+			},
+			gestures: {
+				PAN_THRESHOLD: 10,  // minimum client{X,Y} change distance (not displacement)
+				_pointers: [],
+				rawClickStart: function(e, pointerId /* for multitouch */) {  // mousedown or touchstart (for each touch)
+					pointerId = pointerId || 0;
+					var clientPos = [e.clientX, e.clientY];
+					var worldPos = app.ui.clientToWorldCoords(clientPos[0], clientPos[1]);
+					this._pointers[pointerId] = {
+						startClientPos: clientPos,
+						lastClientPos: clientPos.slice(0),
+						clientPerimeter: 0,
+						startWorldPos: worldPos,
+					};
+					e.preventDefault();
+				},
+				rawClickMove: function(e, pointerId) {
+					pointerId = pointerId || 0;
+					var pointer = this._pointers[pointerId];
+					if (!pointer)
+						return;
+					if (e.buttons === 0) {  // it's a mouse event and the button was released outside
+						this._pointers[pointerId] = undefined;
+						return;
+					}
+					var clientPos = [e.clientX, e.clientY];
+					var delta = app.algebra.vecSub(clientPos, pointer.lastClientPos);
+					pointer.lastClientPos = clientPos;
+					pointer.clientPerimeter += Math.sqrt(delta[0] * delta[0] + delta[1] * delta[1]);
+					if (pointer.clientPerimeter >= this.PAN_THRESHOLD)
+						app.ui.warpPan(e, pointer.startWorldPos);
+					e.preventDefault();
+				},
+				rawClickEnd: function(e, pointerId) {
+					pointerId = pointerId || 0;
+					var pointer = this._pointers[pointerId];
+					if (!pointer)
+						return;
+					// rawClickMove may be called here, but we want to lower the chace of accidental movent on finger removement
+					if (pointer.clientPerimeter < this.PAN_THRESHOLD)
+						app.ui.handleClick(e);
+					this._pointers[pointerId] = undefined;
+					e.preventDefault();
+				},
+			},
+			attachAllListeners: function() {  // should only be ran once
+				var canvas = app.canvas;
+				var extractTouches = function(e) {
+					var result = [];
+					for (var i = 0; i < e.changedTouches.length; ++i)
+						reset.push([e.changedTouches[i], e.changedTouches[i].identifier]);
+				}
+				canvas.addEventListener('mousedown', function(e) {app.ui.gestures.rawClickStart(e);}, false);
+				canvas.addEventListener('mousemove', function(e) {app.ui.gestures.rawClickMove(e); }, false);
+				canvas.addEventListener('mouseup',   function(e) {app.ui.gestures.rawClickEnd(e);  }, false);
+				var names = ['Start', 'Move', 'End'];
+				for (var i = 0; i < names.length; ++i) {
+					var name = names[i];
+					canvas.addEventListener('touch' + name.toLowerCase(), function(e) {
+						var touches = extractTouches(e);
+						for (var j = 0; j < touches.length; ++j)
+							app.ui.gestures['rawClick' + name].apply(app.ui.gestures, touches[j]);
+					}, false);
+				}
+			},
 		},
 		model: {
 			CellContent: {
@@ -597,7 +667,7 @@ addEventListener('load', function() {
 	app.drawing.ctx = app.canvas.getContext('2d');
 	var deploy = document.getElementById('deploy');
 	deploy.appendChild(app.canvas);
-	app.canvas.addEventListener('click', app.ui._clickHandler, false);
+	app.ui.attachAllListeners();
 	app.model.restartGame();
 
 	var restartButton = document.createElement('input');
