@@ -295,20 +295,25 @@ addEventListener('load', function() {
 				var canvas = app.canvas;
 				var extractTouches = function(e) {
 					var result = [];
-					for (var i = 0; i < e.changedTouches.length; ++i)
-						reset.push([e.changedTouches[i], e.changedTouches[i].identifier]);
-				}
+					for (var i = 0; i < e.changedTouches.length; ++i) {
+						var touch = e.changedTouches[i];
+						touch.preventDefault = function() {e.preventDefault()};
+						result.push([touch, touch.identifier]);
+					}
+					return result;
+				};
 				canvas.addEventListener('mousedown', function(e) {app.ui.gestures.rawClickStart(e);}, false);
 				canvas.addEventListener('mousemove', function(e) {app.ui.gestures.rawClickMove(e); }, false);
 				canvas.addEventListener('mouseup',   function(e) {app.ui.gestures.rawClickEnd(e);  }, false);
 				var names = ['Start', 'Move', 'End'];
 				for (var i = 0; i < names.length; ++i) {
-					var name = names[i];
-					canvas.addEventListener('touch' + name.toLowerCase(), function(e) {
-						var touches = extractTouches(e);
-						for (var j = 0; j < touches.length; ++j)
-							app.ui.gestures['rawClick' + name].apply(app.ui.gestures, touches[j]);
-					}, false);
+					(function(name) {  // For does not create var scope!
+						canvas.addEventListener('touch' + name.toLowerCase(), function(e) {
+							var touches = extractTouches(e);
+							for (var j = 0; j < touches.length; ++j)
+								app.ui.gestures['rawClick' + name].apply(app.ui.gestures, touches[j]);
+						}, false);
+					})(names[i]);
 				}
 			},
 		},
