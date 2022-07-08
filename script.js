@@ -57,11 +57,56 @@ addEventListener('load', function() {
 				[0.05,  0],  // world x
 				[0, -0.05],  // world y
 			],
+			_defaultOrigin: [0, 0],
+			_defaultProjectionMatrix: [
+				[0.05,  0],
+				[0, -0.05],
+			],
 			_unprojectionMatrix: null,
+			_scale: 1,
+			_minScale: .5,
+			_maxScale: 4,
+			setScale: function(scale) {
+				if (isNaN(scale))
+					scale = 1;
+				scale = Math.min(this._maxScale, Math.max(this._minScale, scale));
+				this._scale = scale;
+				var mat = [
+					this._defaultProjectionMatrix[0].slice(0),
+					this._defaultProjectionMatrix[1].slice(0),
+				];
+				for (var i = 0; i < mat.length; ++i)
+					for (var j = 0; j < mat[i].length; ++j)
+						mat[i][j] *= scale;
+				this.projectionMatrix = mat;
+				this.getUnprojectionMatrix(true);
+			},
+			scaleBy: function(scale) {
+				this.setScale(this._scale * scale);
+			},
 			getUnprojectionMatrix: function(invalidate) {
 				if (invalidate || this._unprojectionMatrix == null)
 					this._unprojectionMatrix = app.algebra.matInv2d(this.projectionMatrix, this._unprojectionMatrix);
 				return this._unprojectionMatrix;
+			},
+			resetOrigin: function() {
+				this.origin = this._defaultOrigin.slice(0);
+			},
+			moveBy: function(vec) {
+				this.origin = app.algebra.vecAdd(this.origin, vec);
+				for (var i = 0; i < this.origin.length; ++i)
+					if (isNaN(this.origin[i]) || !isFinite(this.origin[i]))
+						return this.resetOrigin();
+			},
+			warpPointTo: function(worldPos, viewportPos /* only drawing knows viewport space */) {  // changes the origin, so that this.project(worldPos) = viewportPos
+				var wantedWorldPos = this.unproject(viewportPos);
+				var delta = app.algebra.vecSub(worldPos, wantedWorldPos);
+				this.moveBy(delta);
+			},
+			scaleAround: function(worldPos, scale) {  // scaleBy(scale) and moves origin, so that this.project(worldPos) doesn't change
+				var viewportPos = this.project(worldPos);
+				this.scaleBy(scale);
+				this.warpPointTo(worldPos, viewportPos);
 			},
 			project: function(pos, result) {
 				if (result == undefined)
@@ -105,6 +150,9 @@ addEventListener('load', function() {
 			unproject: function(pos, result) {
 				result = app.camera.unproject([pos[0] / this.width, pos[1] / this.height], result);
 				return result;
+			},
+			warpPointTo: function(worldPos, canvasPos) {  // changes camera origin, so that this.project(worldPos) = canvasPos
+				app.camera.warpPointTo(worldPos, [canvasPos[0] / this.width, canvasPos[1] / this.height]);
 			},
 			_projectFn: function(pos, result) {
 				return app.drawing.project(pos, result);
@@ -234,9 +282,11 @@ addEventListener('load', function() {
 				app.model.handleClick(pos);
 			},
 			warpPan: function(e, worldPos) {
-				var curWorldPos = this.clientToWorldCoords(e.clientX, e.clientY);
-				var cameraDelta = app.algebra.vecSub(worldPos, curWorldPos);
-				app.camera.origin = app.algebra.vecAdd(app.camera.origin, cameraDelta);
+				app.drawing.warpPointTo(worldPos, this.clientToCanvasCoords(e.clientX, e.clientY));
+				app.drawing.drawScene();
+			},
+			scaleBy: function(cx, cy, scale) {
+				app.camera.scaleAround(this.clientToWorldCoords(cx, cy), scale);
 				app.drawing.drawScene();
 			},
 			clientToCanvasCoords: function(x, y) {
@@ -290,6 +340,12 @@ addEventListener('load', function() {
 					this._pointers[pointerId] = undefined;
 					e.preventDefault();
 				},
+				rawWheel: function(e) {
+					var SENSETIVITY = 0.05;
+					var multiplier = Math.exp(-e.deltaY * SENSETIVITY);
+					app.ui.scaleBy(e.clientX, e.clientY, multiplier);
+					e.preventDefault();
+				},
 			},
 			attachAllListeners: function() {  // should only be ran once
 				var canvas = app.canvas;
@@ -305,6 +361,7 @@ addEventListener('load', function() {
 				canvas.addEventListener('mousedown', function(e) {app.ui.gestures.rawClickStart(e);}, false);
 				canvas.addEventListener('mousemove', function(e) {app.ui.gestures.rawClickMove(e); }, false);
 				canvas.addEventListener('mouseup',   function(e) {app.ui.gestures.rawClickEnd(e);  }, false);
+				canvas.addEventListener('wheel',     function(e) {app.ui.gestures.rawWheel(e);     }, false);
 				var names = ['Start', 'Move', 'End'];
 				for (var i = 0; i < names.length; ++i) {
 					(function(name) {  // For does not create var scope!
