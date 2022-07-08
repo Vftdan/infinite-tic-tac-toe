@@ -50,6 +50,24 @@ addEventListener('load', function() {
 					c[i] = a[i] - b[i];
 				return c;
 			},
+			vecAvg: function(vecs, result) {
+				if (result == undefined)
+					result = vecs[0].slice(0);
+				else
+					for (var i = 1; i < vecs[0].length; ++i)
+						result[i] = vecs[0][i];
+				for (var i = 1; i < vecs.length; ++i)
+					this.vecAdd(result, vecs[i], result);
+				for (var i = 0; i < result.length; ++i)
+					result[i] /= vecs.length;
+				return result;
+			},
+			vecAbs: function(a) {
+				var s = 0;
+				for (var i = 0; i < a.length; ++i)
+					s += a[i] * a[i];
+				return Math.sqrt(s);
+			},
 		},
 		camera: {
 			origin: [0, 0],
@@ -277,12 +295,12 @@ addEventListener('load', function() {
 			},
 		},
 		ui: {
-			handleClick: function(e) {
-				var pos = this.clientToWorldCoords(e.clientX, e.clientY);
+			handleClick: function(cx, cy) {
+				var pos = this.clientToWorldCoords(cx, cy);
 				app.model.handleClick(pos);
 			},
-			warpPan: function(e, worldPos) {
-				app.drawing.warpPointTo(worldPos, this.clientToCanvasCoords(e.clientX, e.clientY));
+			warpPan: function(clientPos, worldPos) {
+				app.drawing.warpPointTo(worldPos, this.clientToCanvasCoords(clientPos[0], clientPos[1]));
 				app.drawing.drawScene();
 			},
 			scaleBy: function(cx, cy, scale) {
@@ -300,47 +318,91 @@ addEventListener('load', function() {
 			gestures: {
 				PAN_THRESHOLD: 10,  // minimum client{X,Y} change distance (not displacement)
 				_pointers: [],
-				rawClickStart: function(e, pointerId /* for multitouch */) {  // mousedown or touchstart (for each touch)
+				singlePointerStart: function(e, pointerId /* for multitouch */) {  // mousedown or touchstart (for each touch)
 					pointerId = pointerId || 0;
 					var clientPos = [e.clientX, e.clientY];
 					var worldPos = app.ui.clientToWorldCoords(clientPos[0], clientPos[1]);
 					this._pointers[pointerId] = {
 						startClientPos: clientPos,
 						lastClientPos: clientPos.slice(0),
+						pendingClientPos: null,
 						clientPerimeter: 0,
 						startWorldPos: worldPos,
+						aborted: false,
+						finished: false,
+						multi: false,  // there were simultaneous touches
 					};
-					e.preventDefault();
 				},
-				rawClickMove: function(e, pointerId) {
+				singlePointerMove: function(e, pointerId) {
 					pointerId = pointerId || 0;
 					var pointer = this._pointers[pointerId];
 					if (!pointer)
 						return;
 					if (e.buttons === 0) {  // it's a mouse event and the button was released outside
-						this._pointers[pointerId] = undefined;
+						pointer.aborted = true;
 						return;
 					}
 					var clientPos = [e.clientX, e.clientY];
-					var delta = app.algebra.vecSub(clientPos, pointer.lastClientPos);
-					pointer.lastClientPos = clientPos;
-					pointer.clientPerimeter += Math.sqrt(delta[0] * delta[0] + delta[1] * delta[1]);
-					if (pointer.clientPerimeter >= this.PAN_THRESHOLD)
-						app.ui.warpPan(e, pointer.startWorldPos);
-					e.preventDefault();
+					pointer.pendingClientPos = clientPos;
 				},
-				rawClickEnd: function(e, pointerId) {
+				singlePointerEnd: function(e, pointerId) {
 					pointerId = pointerId || 0;
 					var pointer = this._pointers[pointerId];
 					if (!pointer)
 						return;
-					// rawClickMove may be called here, but we want to lower the chace of accidental movent on finger removement
-					if (pointer.clientPerimeter < this.PAN_THRESHOLD)
-						app.ui.handleClick(e);
-					this._pointers[pointerId] = undefined;
+					pointer.finished = true;
+				},
+				processGestures: function(e) {
+					var oldClientPoses = [];
+					var newClientPoses = [];
+					var startWorldPoses = [];
+					for (var i = 0; i < this._pointers.length; ++i) {
+						var pointer = this._pointers[i];
+						if (!pointer)
+							continue;
+						if (pointer.finished && !pointer.multi && pointer.clientPerimeter < this.PAN_THRESHOLD)
+							app.ui.handleClick(pointer.lastClientPos[0], pointer.lastClientPos[1]);
+						if (pointer.finished || pointer.aborted) {
+							this._pointers[i] = undefined;
+							continue;
+						}
+						oldClientPoses.push(pointer.lastClientPos);
+						startWorldPoses.push(pointer.startWorldPos);
+						var newClientPos = pointer.lastClientPos;
+						if (pointer.pendingClientPos) {
+							var delta = app.algebra.vecSub(pointer.pendingClientPos, pointer.lastClientPos);
+							pointer.clientPerimeter += app.algebra.vecAbs(delta);
+							if (pointer.clientPerimeter >= this.PAN_THRESHOLD)
+								newClientPos = pointer.pendingClientPos;
+							pointer.lastClientPos = pointer.pendingClientPos;
+							pointer.pendingClientPos = null;
+						}
+						newClientPoses.push(newClientPos);
+					}
+					if (!newClientPoses.length)
+						return;
+					var avgOldClientPos = app.algebra.vecAvg(oldClientPoses);
+					var avgNewClientPos = app.algebra.vecAvg(newClientPoses);
+					var avgStartWorldPos = app.algebra.vecAvg(startWorldPoses);
+					app.ui.warpPan(avgNewClientPos, avgStartWorldPos);
+					if (newClientPoses.length > 1) {
+						var oldTotalDist = 0;
+						var newTotalDist = 0;
+						for (var i = 0; i < this._pointers.length; ++i) {
+							if (this._pointers[i])
+								this._pointers[i].multi = true;
+						}
+						for (var i = 0; i < newClientPoses.length; ++i) {
+							var oldDeviation = app.algebra.vecSub(oldClientPoses[i], avgOldClientPos);
+							var newDeviation = app.algebra.vecSub(newClientPoses[i], avgNewClientPos);
+							oldTotalDist += app.algebra.vecAbs(oldDeviation);
+							newTotalDist += app.algebra.vecAbs(newDeviation);
+						}
+						app.ui.scaleBy(avgNewClientPos[0], avgNewClientPos[1], newTotalDist / oldTotalDist);
+					}
 					e.preventDefault();
 				},
-				rawWheel: function(e) {
+				wheelScroll: function(e) {
 					var SENSETIVITY = 0.05;
 					var multiplier = Math.exp(-e.deltaY * SENSETIVITY);
 					app.ui.scaleBy(e.clientX, e.clientY, multiplier);
@@ -353,22 +415,22 @@ addEventListener('load', function() {
 					var result = [];
 					for (var i = 0; i < e.changedTouches.length; ++i) {
 						var touch = e.changedTouches[i];
-						touch.preventDefault = function() {e.preventDefault()};
 						result.push([touch, touch.identifier]);
 					}
 					return result;
 				};
-				canvas.addEventListener('mousedown', function(e) {app.ui.gestures.rawClickStart(e);}, false);
-				canvas.addEventListener('mousemove', function(e) {app.ui.gestures.rawClickMove(e); }, false);
-				canvas.addEventListener('mouseup',   function(e) {app.ui.gestures.rawClickEnd(e);  }, false);
-				canvas.addEventListener('wheel',     function(e) {app.ui.gestures.rawWheel(e);     }, false);
+				canvas.addEventListener('mousedown', function(e) {app.ui.gestures.singlePointerStart(e); app.ui.gestures.processGestures(e);}, false);
+				canvas.addEventListener('mousemove', function(e) {app.ui.gestures.singlePointerMove(e);  app.ui.gestures.processGestures(e);}, false);
+				canvas.addEventListener('mouseup',   function(e) {app.ui.gestures.singlePointerEnd(e);   app.ui.gestures.processGestures(e);}, false);
+				canvas.addEventListener('wheel',     function(e) {app.ui.gestures.wheelScroll(e);}, false);
 				var names = ['Start', 'Move', 'End'];
 				for (var i = 0; i < names.length; ++i) {
 					(function(name) {  // For does not create var scope!
 						canvas.addEventListener('touch' + name.toLowerCase(), function(e) {
 							var touches = extractTouches(e);
 							for (var j = 0; j < touches.length; ++j)
-								app.ui.gestures['rawClick' + name].apply(app.ui.gestures, touches[j]);
+								app.ui.gestures['singlePointer' + name].apply(app.ui.gestures, touches[j]);
+							app.ui.gestures.processGestures(e);
 						}, false);
 					})(names[i]);
 				}
