@@ -320,18 +320,16 @@ addEventListener('load', function() {
 				_pointers: [],
 				singlePointerStart: function(e, pointerId /* for multitouch */) {  // mousedown or touchstart (for each touch)
 					pointerId = pointerId || 0;
-					var clientPos = [e.clientX, e.clientY];
-					var worldPos = app.ui.clientToWorldCoords(clientPos[0], clientPos[1]);
 					this._pointers[pointerId] = {
-						startClientPos: clientPos,
-						lastClientPos: clientPos.slice(0),
+						lastClientPos: [e.clientX, e.clientY],
 						pendingClientPos: null,
 						clientPerimeter: 0,
-						startWorldPos: worldPos,
 						aborted: false,
 						finished: false,
 						multi: false,  // there were simultaneous touches
 					};
+					// We use start position to avoid floating point error accumulation, but when the number of touches changes, we reset start positions of all pointers to have a standard multifinger scrolling
+					this._resetPointerStarts();
 				},
 				singlePointerMove: function(e, pointerId) {
 					pointerId = pointerId || 0;
@@ -351,6 +349,7 @@ addEventListener('load', function() {
 					if (!pointer)
 						return;
 					pointer.finished = true;
+					this._resetPointerStarts();
 				},
 				processGestures: function(e) {
 					var oldClientPoses = [];
@@ -401,6 +400,17 @@ addEventListener('load', function() {
 						app.ui.scaleBy(avgNewClientPos[0], avgNewClientPos[1], newTotalDist / oldTotalDist);
 					}
 					e.preventDefault();
+				},
+				_resetPointerStarts: function() {
+					for (var i = 0; i < this._pointers.length; ++i) {
+						var pointer = this._pointers[i];
+						if (!pointer)
+							continue;
+						var clientPos = pointer.lastClientPos.slice(0);
+						var worldPos = app.ui.clientToWorldCoords(clientPos[0], clientPos[1]);
+						pointer.startClientPos = clientPos;
+						pointer.startWorldPos = worldPos;
+					}
 				},
 				wheelScroll: function(e) {
 					var SENSETIVITY = 0.05;
