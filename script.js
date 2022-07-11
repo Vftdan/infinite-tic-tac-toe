@@ -575,8 +575,37 @@ addEventListener('load', function() {
 			restartGame: function() {
 				this.backends.newGame();
 			},
+			_scrollIntoView: function(minPos, maxPos) {
+				var curMinPos = app.drawing.unproject([0, 0]);
+				var curMaxPos = app.drawing.unproject([app.canvas.width, app.canvas.height]);
+				var dir = [0, 0];
+				var ctxAnchorPos = [0, 0];
+				for (var i = 0; i < 2; ++i) {
+					var flipped = false;
+					if (curMinPos[i] > curMaxPos[i]) {
+						flipped = true;
+						var temp = curMinPos[i];
+						curMinPos[i] = curMaxPos[i];
+						curMaxPos[i] = temp;
+					}
+					var exceedsHigher = maxPos[i] > curMaxPos[i];
+					var exceedsLower = minPos[i] < curMinPos[i];
+					if (exceedsHigher && !exceedsLower)
+						dir[i] = 1;
+					if (exceedsLower && !exceedsHigher)
+						dir[i] = -1;
+					ctxAnchorPos[i] = (exceedsHigher != flipped) ? app.canvas[['width', 'height'][i]] : 0;
+				}
+				var worldAnchorPos = app.drawing.unproject(ctxAnchorPos);
+				for (var i = 0; i < 2; ++i) {
+					if (dir[i])
+						worldAnchorPos[i] = (dir[i] > 0) ? maxPos[i] : minPos[i];
+				}
+				app.drawing.warpPointTo(worldAnchorPos, ctxAnchorPos);
+			},
 			handleMessages: function(arr) {
 				var fieldDirty = false;
+				var scrollToCoords = null;
 				for (var i = 0; i < arr.length; ++i) {
 					var msg = arr[i];
 					switch (msg.method) {
@@ -592,6 +621,7 @@ addEventListener('load', function() {
 							break;
 						case 'placeSymbol':
 							this.field.setAt(msg.x | 0, msg.y | 0, msg.symbol);
+							scrollToCoords = [msg.x, msg.y];
 							fieldDirty = true;
 							break;
 						case 'setLocalPlayer':
@@ -615,6 +645,10 @@ addEventListener('load', function() {
 						default:
 							console.error('Unknown method: ' + obj.method);
 					}
+				}
+				if (scrollToCoords) {
+					this._scrollIntoView(scrollToCoords, app.algebra.vecAdd(scrollToCoords, [1, 1]));
+					fieldDirty = true;
 				}
 				if (fieldDirty)
 					app.drawing.drawScene();
