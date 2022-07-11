@@ -156,6 +156,7 @@ addEventListener('load', function() {
 				bgColor: [255, 255, 255, 1],
 				winLineColor: [0, 0, 255, 1],
 				gridColor: [120, 120, 120, 1],
+				gridCoordinateColor: [0, 50, 0, 1],
 				ticTacToeColorSymbols: [0, 0, 0, 1],
 				font: '24px sans-serif',
 			},
@@ -245,6 +246,29 @@ addEventListener('load', function() {
 						}
 					}
 					ctx.stroke();
+
+					ctx.fillStyle = 'rgba(' + style.gridCoordinateColor + ')';
+					ctx.textAlign = 'left';
+					ctx.textBaseline = 'bottom';
+					ctx.font = style.font;
+					var coordinatesPosition = bounds[0].slice(0);
+					for (var i = 0; i < 2; ++i) {
+						var curr = firstPos[i];
+						var pos = coordinatesPosition.slice(0);
+						var lastEnd = -Infinity;
+						while (curr <= bounds[1][i]) {
+							pos[i] = curr;
+							projectFn(pos, ctxPos);
+							var textBounds = ctx.measureText(curr);
+							var textBoundsVec = [textBounds.width, textBounds.actualBoundingBoxAscent - textBounds.actualBoundingBoxDescent];
+							var endPos = app.algebra.vecAdd(ctxPos, textBoundsVec);
+							if ((ctxPos[i] - lastEnd) * (endPos[i] - lastEnd) > 0) {
+								ctx.fillText(curr, ctxPos[0] + 5, ctxPos[1]);
+								lastEnd = endPos[i];
+							}
+							curr += cellSize;
+						}
+					}
 				}
 			};
 
