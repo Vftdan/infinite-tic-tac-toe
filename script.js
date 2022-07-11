@@ -624,9 +624,12 @@ addEventListener('load', function() {
 					_model: {
 						won: false,
 						WIN_CONDITION_CONSECUTIVE: 5,
+						MAX_REMOTE_SYMBOL_DISTANCE: 100,  // how far away new symbols can be from the existing ones
 						field: null,  // we will store the field content twice to minimize the difference with remote backends
+
 						expectSymbol: false,
 						currentPlayer: null,
+						existingSymbolsBounds: [[0, 0], [0, 0]],
 						_nextPlayer: function() {
 							switch (this.currentPlayer) {
 								case app.model.CellContent.CROSS:
@@ -649,8 +652,26 @@ addEventListener('load', function() {
 							if (this.field.getAt(x, y)) {
 								return [
 									new localBackend._responseConstructors.ShowError("Occupied!"),
+									new localBackend._responseConstructors.WaitSymbol(),
 								];
 							}
+
+							if (
+								x < this.existingSymbolsBounds[0][0] - 100 ||
+								x > this.existingSymbolsBounds[1][0] + 100 ||
+								y < this.existingSymbolsBounds[0][1] - 100 ||
+								y > this.existingSymbolsBounds[1][1] + 100
+							) {
+								return [
+									new localBackend._responseConstructors.ShowError("Too far away!"),
+									new localBackend._responseConstructors.WaitSymbol(),
+								];
+							}
+							this.existingSymbolsBounds[0][0] = Math.min(x, this.existingSymbolsBounds[0][0]);
+							this.existingSymbolsBounds[1][0] = Math.max(x, this.existingSymbolsBounds[1][0]);
+							this.existingSymbolsBounds[0][1] = Math.min(y, this.existingSymbolsBounds[0][1]);
+							this.existingSymbolsBounds[1][1] = Math.max(y, this.existingSymbolsBounds[1][1]);
+
 							this.field.setAt(x, y, this.currentPlayer);
 							var result = [
 								new localBackend._responseConstructors.PlaceSymbol(x, y, this.currentPlayer),
@@ -734,6 +755,7 @@ addEventListener('load', function() {
 							else
 								this.field = new app.model.TicTacToeField();
 							this.currentPlayer = app.model.CellContent.CROSS;
+							this.existingSymbolsBounds = [[0, 0], [0, 0]];
 							return [
 								new localBackend._responseConstructors.ClearField(),
 								new localBackend._responseConstructors.SetLocalPlayer(1),
