@@ -591,7 +591,7 @@ addEventListener('load', function() {
 							fieldDirty = true;
 							break;
 						case 'placeSymbol':
-							this.field.setAt(msg.x, msg.y, msg.symbol);
+							this.field.setAt(msg.x | 0, msg.y | 0, msg.symbol);
 							fieldDirty = true;
 							break;
 						case 'setLocalPlayer':
