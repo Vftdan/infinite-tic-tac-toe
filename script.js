@@ -146,7 +146,16 @@ addEventListener('load', function() {
 			},
 		},
 		canvas: document.createElement('canvas'),
-		controlsForm: document.getElementById('controls'),
+		controlsContainer: document.getElementById('controls'),
+		messagesContainer: document.getElementById('messages'),
+		showMessage: function(type, content) {
+			var oldHeight = app.messagesContainer.scrollHeight;
+			var p = document.createElement('p');
+			p.className = 'message-' + type;
+			p.innerText = content;
+			app.messagesContainer.appendChild(p);
+			app.messagesContainer.scrollTop += app.messagesContainer.scrollHeight - oldHeight;
+		},
 		drawing: {
 			ctx: null,
 			width: CANVAS_SIZE,
@@ -566,7 +575,7 @@ addEventListener('load', function() {
 				var x = Math.floor(pos[0]);
 				var y = Math.floor(pos[1]);
 				if (this.field.getAt(x, y)) {
-					alert('Occupied!');
+					app.showMessage('error', 'Occupied!');
 					return;
 				}
 				this.expectSymbol = false;
@@ -635,12 +644,12 @@ addEventListener('load', function() {
 							break;
 						case 'showError':
 							console.error('Received error: ' + msg.text);
-							alert(msg.text);
+							app.showMessage('error', msg.text);
 							break;
 						case 'winGame':
 							app.scene._elements.push(new app.shapes.LineSegment(msg.start.x + .5, msg.start.y + .5, msg.end.x + .5, msg.end.y + .5));
 							this.won = true;
-							alert(this.playerNames[msg.player] + ' win!');
+							app.showMessage('win', this.playerNames[msg.player] + ' won!');
 							break;
 						default:
 							console.error('Unknown method: ' + obj.method);
@@ -879,8 +888,8 @@ addEventListener('load', function() {
 	app.canvas.width  = CANVAS_SIZE;
 	app.canvas.height = CANVAS_SIZE;
 	app.drawing.ctx = app.canvas.getContext('2d');
-	var deploy = document.getElementById('deploy');
-	deploy.appendChild(app.canvas);
+	var fieldDeploy = document.getElementById('field');
+	fieldDeploy.appendChild(app.canvas);
 	app.ui.attachAllListeners();
 	app.model.restartGame();
 
@@ -890,5 +899,5 @@ addEventListener('load', function() {
 	restartButton.addEventListener('click', function() {
 		app.model.restartGame();
 	}, false);
-	deploy.appendChild(restartButton);
+	app.controlsContainer.appendChild(restartButton);
 }, false);

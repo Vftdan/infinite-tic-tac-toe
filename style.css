@@ -2,13 +2,44 @@
 	font-family: sans-serif;
 }
 
+* {
+	box-sizing: border-box;
+}
+
 body > * {
 	margin: 4pt;
-	display: inline-block;
 	vertical-align: top;
 }
 
-canvas {
+#field, #messages {
+	display: inline-block;
 	border: 1pt solid black;
+}
+
+#messages {
+	width: calc(100% - 22.5pt - 640px);
+	height: calc(640px + 2pt);
+	overflow: auto;
+	padding: 4pt;
+}
+
+@media (max-width: 1079px) {
+	#messages {
+		width: calc(100% - 8pt);
+		height: unset;
+		min-height: 80px;
+		max-height: 640px;
+	}
+}
+
+canvas {
 	width: 640px;
+}
+
+.message-error {
+	color: darkred;
+}
+
+.message-win {
+	color: darkgreen;
 }
