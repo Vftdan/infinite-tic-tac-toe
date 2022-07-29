@@ -6,6 +6,17 @@ For network transmission messages are encoded as JSON and sent via text WebSocke
 
 ## Client to server
 
+### `register`
+
+### `login`
+
+ * `id`: string
+ * `token`: string
+
+### `fetchGameState`
+
+Request the server to send all the events needed to syncronize client with server's game state no matter what client's current state is.
+
 ### `newGame`
 
 ### `placeSymbol`
@@ -16,6 +27,13 @@ When sending this event, field ui should be locked from placing new symbols by u
  * `y`
 
 ## Server to client
+
+### `authComlete`
+
+### `setCredentials`
+
+ * `id`: string
+ * `token`: string
 
 ### `clearField`
 

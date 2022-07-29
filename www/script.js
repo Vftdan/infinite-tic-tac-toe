@@ -563,6 +563,17 @@ addEventListener('load', function() {
 					reset: function() {
 						this.chunks = Object.create(null);
 					},
+					getBoundaries: function() {
+						var boxes = [];
+						for (var i in this.chunks) {
+							var chunk = this.chunks[i];
+							boxes.push([
+								[chunk.x, chunk.y],
+								[chunk.x + CHUNK_SIDE, chunk.y + CHUNK_SIDE],
+							]);
+						}
+						return boxes;
+					},
 				};
 
 				return TicTacToeField;
@@ -654,6 +665,12 @@ addEventListener('load', function() {
 							this.won = true;
 							app.showMessage('win', this.playerNames[msg.player] + ' won!');
 							break;
+						// Non-game:
+						case 'authComlete':
+							app.showMessage('info', 'Authenticated');
+							break;
+						case 'setCredentials':
+							break;
 						default:
 							console.error('Unknown method: ' + obj.method);
 					}
@@ -669,6 +686,7 @@ addEventListener('load', function() {
 				var localBackend = {
 					_model: {
 						won: false,
+						winLine: null,
 						WIN_CONDITION_CONSECUTIVE: 5,
 						MAX_REMOTE_SYMBOL_DISTANCE: 100,  // how far away new symbols can be from the existing ones
 						field: null,  // we will store the field content twice to minimize the difference with remote backends
@@ -736,6 +754,7 @@ addEventListener('load', function() {
 								result.push(
 									new localBackend._responseConstructors.WinGame(this.currentPlayer, winLine[0], winLine[1])
 								);
+								this.winLine = winLine;
 								this.won = true;
 							} else {
 								this._nextPlayer();
@@ -794,6 +813,32 @@ addEventListener('load', function() {
 							}
 							return res;
 						},
+						fetchGameState: function() {
+							var res = [
+								new localBackend._responseConstructors.ClearField(),
+								new localBackend._responseConstructors.SetLocalPlayer(this.currentPlayer),
+								new localBackend._responseConstructors.SetCurrentPlayer(this.currentPlayer),
+							];
+
+							var boxes = this.field ? this.field.getBoundaries() : [];
+							for (var i = 0; i < boxes.length; ++i) {
+								var start = boxes[i][0];
+								var end   = boxes[i][1];
+								for (var x = start[0]; x < end[0]; ++x)
+									for (var y = start[1]; y < end[1]; ++y) {
+										var symbol = this.field.getAt(x, y);
+										if (symbol)
+											res.push(new localBackend._responseConstructors.PlaceSymbol(x, y, symbol));
+									}
+							}
+
+							if (this.won)
+								res.push(new localBackend._responseConstructors.WinGame(this.currentPlayer, this.winLine[0], this.winLine[1]));
+
+							else
+								res.push(new localBackend._responseConstructors.WaitSymbol());
+							return res;
+						},
 						restartGame: function() {
 							this.won = false;
 							if (this.field)
@@ -824,7 +869,8 @@ addEventListener('load', function() {
 						function sendResponse(arr) {
 							for (var i = 0; i < arr.length; ++i)
 								arr[i].method = arr[i].method;  // Make 'method' an own property
-							app.model.handleMessages(arr);
+							if (localBackend == app.model.backends.currentBackend)
+								app.model.handleMessages(arr);
 						}
 						var constructors = this._responseConstructors;
 						var model = this._model;
@@ -836,6 +882,9 @@ addEventListener('load', function() {
 							},
 							newGame: function(obj) {
 								sendResponse(model.restartGame());
+							},
+							fetchGameState: function(obj) {
+								sendResponse(model.fetchGameState());
 							},
 							placeSymbol: function(obj) {
 								sendResponse(model.tryPlaceSymbol(obj.x, obj.y));
@@ -880,6 +929,9 @@ addEventListener('load', function() {
 					newGame: function() {
 						this.currentBackend.sendMessage({method: 'newGame'});
 					},
+					fetchGameState: function() {
+						this.currentBackend.sendMessage({method: 'fetchGameState'});
+					},
 					placeSymbol: function(x, y) {
 						this.currentBackend.sendMessage({method: 'placeSymbol', x: x, y: y});
 					},
@@ -896,11 +948,16 @@ addEventListener('load', function() {
 	app.ui.attachAllListeners();
 	app.model.restartGame();
 
-	var restartButton = document.createElement('input');
-	restartButton.type = 'button';
-	restartButton.value = 'Restart';
-	restartButton.addEventListener('click', function() {
+	var createButton = function(value, handler) {
+		var button = document.createElement('input');
+		button.type = 'button';
+		button.value = value;
+		if (handler)
+			button.addEventListener('click', handler, false);
+		app.controlsContainer.appendChild(button);
+		return button;
+	}
+	createButton('Restart', function() {
 		app.model.restartGame();
-	}, false);
-	app.controlsContainer.appendChild(restartButton);
+	});
 }, false);
