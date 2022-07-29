@@ -634,12 +634,15 @@ addEventListener('load', function() {
 							fieldDirty = true;
 							break;
 						case 'setLocalPlayer':
+							app.showMessage('info', 'You are playing as ' + this.playerNames[msg.player]);
 							this.localPlayer = msg.player;
 							break;
 						case 'setCurrentPlayer':
-							this.localPlayer = msg.player;
+							app.showMessage('info', "It's " + this.playerNames[msg.player] + "' turn");
+							this.currentPlayer = msg.player;
 							break;
 						case 'waitSymbol':
+							app.showMessage('info', 'Please, select a cell to place your symbol');
 							this.expectSymbol = true;
 							break;
 						case 'showError':

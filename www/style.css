@@ -43,3 +43,7 @@ canvas {
 .message-win {
 	color: darkgreen;
 }
+
+.message-info {
+	color: black;
+}
