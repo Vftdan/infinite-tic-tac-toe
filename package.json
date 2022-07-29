@@ -1,5 +1,8 @@
 {
 	"name": "infinite-tic-tac-toe",
 	"version": "0.0.0",
-	"description": "Tic-tac-toe with infinite field"
+	"description": "Tic-tac-toe with infinite field",
+	"dependencies": {
+		"ws": "^8.8.1"
+	}
 }

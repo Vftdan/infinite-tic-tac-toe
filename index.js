@@ -1,5 +1,7 @@
 const http = require('http');
 const fs = require('fs/promises');
+const ws = require('ws');
+const websocketHandling = require('./websocketHandling.js');
 
 const PORT = 48321;
 
@@ -33,11 +35,19 @@ const server = http.createServer((req, res) => {
 	}
 
 	if (url == wsPath) {
-		// TODO
+		res.writeHead(426, {  // Upgrade required
+			Upgrade: 'websocket',
+			Connection: 'Upgrade',
+		});
+		res.end('This is a websocket');
+		return;
 	}
 
 	res.writeHead(404);
 	res.end('Not found');
 });
+
+const wss = new ws.Server({server: server, path: '/' + wsPath});
+websocketHandling(wss);
 
 server.listen(PORT);

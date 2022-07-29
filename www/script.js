@@ -923,8 +923,101 @@ addEventListener('load', function() {
 					})(),
 				};
 				localBackend._messageHandlers__create();
+
+				var serverBackend = {
+					WS_PATH: 'ws',
+					ws: null,
+					authenticated: false,
+					authCompleteHandlers: null,
+					createWs: function() {
+						var absHttpUrl = new URL(this.WS_PATH, document.baseURI);
+						var wsUrl = absHttpUrl.href.replace(/^http/, 'ws');  // We do not expect our app to work online from something other than http:// or https://
+						var ws = new WebSocket(wsUrl);
+						var backend = this;
+						ws.addEventListener('message', function(e) {backend.wsResponseHandler(e);}, false);
+						this.authenticated = false;
+						if (!this.authCompleteHandlers)
+							this.authCompleteHandlers = [];
+						this.ws = ws;
+					},
+					getWs: function() {
+						if (this.ws == null || this.ws.readyState > 1)
+							this.createWs();
+						return this.ws;
+					},
+					wsResponseHandler: function(e) {
+						var data = e.data;
+						// TODO consider handling invalid data
+						var arr = JSON.parse(data);
+						for (var i = 0; i < arr.length; ++i)
+							switch (arr[i].method) {
+								case 'authComlete':
+									this.onAuthComplete();
+									break;
+								case 'setCredentials':
+									this.saveCredentials(arr[i].id, arr[i].token);
+									break;
+								default:
+									break;
+							}
+						if (this == app.model.backends.currentBackend)
+							app.model.handleMessages(arr);
+					},
+					getSavedCredentials: function() {
+						if (!localStorage)
+							return null;
+						var value = JSON.parse(localStorage.getItem('TicTacToe_credentials'));
+						if (!value || !value.id || !value.token)
+							return null;
+						return value;
+					},
+					saveCredentials: function(id, token) {
+						if (!localStorage)
+							return;
+						localStorage.setItem('TicTacToe_credentials', JSON.stringify({id: id, token: token}));
+					},
+					sendMessageUnauthenticated: function(msg) {
+						var ws = this.getWs();
+						var txt = JSON.stringify(msg);
+						var onopen = function() {
+							ws.send(txt);
+						};
+						if (ws.readyState == 1)
+							onopen();
+						else
+							ws.addEventListener('open', onopen, false);
+					},
+					onAuthComplete: function() {
+						this.authenticated = true;
+						while (this.authCompleteHandlers.length) {
+							var handler = this.authCompleteHandlers.shift();
+							if (typeof(handler) != 'function')
+								continue;
+							handler();
+						}
+					},
+					authenticate: function() {
+						var creds = this.getSavedCredentials();
+						if (!creds)
+							this.sendMessageUnauthenticated({method: 'register'});
+						else
+							this.sendMessageUnauthenticated({method: 'login', id: creds.id, token: creds.token});
+					},
+					sendMessage: function(msg) {
+						this.getWs();
+						var backend = this;
+						if (this.authenticated)
+							this.sendMessageUnauthenticated(msg);
+						else {
+							this.authCompleteHandlers.push(function() {backend.sendMessageUnauthenticated(msg);});
+							this.authenticate();
+						}
+					},
+				};
+
 				return {
 					localBackend: localBackend,
+					serverBackend: serverBackend,
 					currentBackend: localBackend,
 					newGame: function() {
 						this.currentBackend.sendMessage({method: 'newGame'});
@@ -959,5 +1052,13 @@ addEventListener('load', function() {
 	}
 	createButton('Restart', function() {
 		app.model.restartGame();
+	});
+	createButton('Switch to server', function() {
+		app.model.backends.currentBackend = app.model.backends.serverBackend;
+		app.model.backends.fetchGameState();
+	});
+	createButton('Switch to local', function() {
+		app.model.backends.currentBackend = app.model.backends.localBackend;
+		app.model.backends.fetchGameState();
 	});
 }, false);
