@@ -295,13 +295,23 @@ class GameSession {
 	fetchGameState(client) {
 		const res = [
 			new messages.ClearField(),
-			new messages.SetCurrentPlayer(this.currentPlayer),
 		];
 		const clientId = client.clientId;
 		if (!this._clientIds.has(clientId)) {
 			console.error('Non-member client ' + clientId + ' is fetching game state of the room ' + this.roomId);
 			return res;
 		}
+
+		const clientIds = [];
+		for (const roomClient of this.getClients()) {
+			if (roomClient.clientId == clientId)
+				clientIds.push(clientId + ' (You)');
+			else
+				clientIds.push(roomClient.clientId);
+		}
+		res.push(new messages.ShowInfo('You are connected to a room with clients: ' + clientIds.join(', ')));
+
+		res.push(new messages.SetCurrentPlayer(this.currentPlayer));
 		const isCurrentPlayer = this.isCurrentClient(client);
 		const localPlayer = isCurrentPlayer ? this.currentPlayer : this._clientPlayers.get(clientId)[0];
 		if (localPlayer) {
@@ -341,6 +351,7 @@ class GameSession {
 		this.currentPlayer = CellContent.CROSS;
 		this.existingSymbolsBounds = [[0, 0], [0, 0]];
 		return [
+			new messages.ShowInfo('Restarting the game'),
 			new messages.ClearField(),
 			new messages.SetCurrentPlayer(1),
 		];
@@ -380,6 +391,8 @@ class GameSession {
 			return;
 		}
 		this._pendingClients.delete(clientId);
+		newClient.queueResponse([new messages.ShowInfo('Connected to the room')]);
+		this.broadcastResponse([new messages.ShowInfo('Client ' + clientId + ' was accepted by ' + acceptingClient.clientId)]);
 		newClient.sendResponse(this.fetchGameState(newClient));
 	}
 
@@ -441,6 +454,8 @@ class GameSession {
 			this._playerClients.set(player, null);
 
 		client.game = null;
+
+		this.broadcastResponse([new messages.ShowInfo('Client ' + clientId + ' left the room')]);
 		return true;
 	}
 
