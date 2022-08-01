@@ -673,7 +673,7 @@ addEventListener('load', function() {
 							app.scene._elements.push(new app.shapes.Grid(1));
 							app.scene._elements.push(new app.shapes.TicTacToeSymbols(this.field));
 							fieldDirty = true;
-							this.waitSymbol = false;
+							this.expectSymbol = false;
 							break;
 						case 'placeSymbol':
 							this.field.setAt(msg.x | 0, msg.y | 0, msg.symbol);
@@ -1031,7 +1031,7 @@ addEventListener('load', function() {
 					},
 					showJoinRoomRequest: function(clientId) {
 						var backend = this;
-						app.showMessage('info', 'Client with id ' + clientId + ' wants to join', {buttons: [
+						app.showMessage('info', 'Client with id ' + clientId + ' wants to join: ', {buttons: [
 							{text: 'Accept', handler: function(e) {backend.sendMessage({method: 'acceptJoinRoom', id: clientId});}},
 						]});
 					},

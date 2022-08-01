@@ -1,5 +1,6 @@
 const messages = require('./responseMessages.js');
 const registry = require('./gameRegistry.js');
+const clientRegistry = require('./clientRegistry.js');
 
 const CellContent = {
 	EMPTY: 0,
@@ -105,6 +106,8 @@ class TicTacToeField {
 
 TicTacToeField.Chunk = Chunk;
 
+const MAX_CLIENTS = 2;
+
 class GameSession {
 	won = false;
 	winLine = null;
@@ -112,9 +115,19 @@ class GameSession {
 	MAX_REMOTE_SYMBOL_DISTANCE = 100;  // how far away new symbols can be from the existing ones
 	field = null;  // we will store the field content twice to minimize the difference with remote backends
 
-	expectSymbol = false;
 	currentPlayer = null;
 	existingSymbolsBounds = [[0, 0], [0, 0]];
+
+	_clientIds = new Set();
+	_clientPlayers = (new Map()).set(null, [CellContent.CROSS, CellContent.NOUGHT]);
+	_playerClients = new Map();
+	_pendingClients = new Set();
+
+	constructor() {
+		for (const [client, players] of this._clientPlayers)
+			for (const player of players)
+				this._playerClients.set(player, client);
+	}
 
 	_nextPlayer() {
 		switch (this.currentPlayer) {
@@ -129,10 +142,26 @@ class GameSession {
 		}
 	}
 
-	tryPlaceSymbol(x, y) {
+	isCurrentClient(client) {
+		const clientId = client.clientId;
+		return clientId && this._playerClients.get(this.currentPlayer) == clientId;
+	}
+
+	broadcastResponse(msg) {
+		for (const client of this.getClients()) {
+			if (client.game == this)
+				client.sendResponse(msg);
+		}
+	}
+
+	tryPlaceSymbol(client, x, y) {
 		if (this.won)
 			return [
 				new messages.ShowError("Game is already over!"),
+			];
+		if (!this.isCurrentClient(client))
+			return [
+				new messages.ShowError("It's another player's turn"),
 			];
 		x = +x | 0;
 		y = +y | 0;
@@ -160,7 +189,7 @@ class GameSession {
 		this.existingSymbolsBounds[1][1] = Math.max(y, this.existingSymbolsBounds[1][1]);
 
 		this.field.setAt(x, y, this.currentPlayer);
-		const result = [
+		const publicResult = [
 			new messages.PlaceSymbol(x, y, this.currentPlayer),
 		];
 		const directions = [
@@ -174,20 +203,20 @@ class GameSession {
 			winLine = this._checkWinAround([x, y], directions[i]);
 		}
 		if (winLine) {
-			result.push(
+			publicResult.push(
 				new messages.WinGame(this.currentPlayer, winLine[0], winLine[1])
 			);
 			this.winLine = winLine;
 			this.won = true;
 		} else {
 			this._nextPlayer();
-			result.push(
-				new messages.SetLocalPlayer(this.currentPlayer),
+			publicResult.push(
 				new messages.SetCurrentPlayer(this.currentPlayer),
-				new messages.WaitSymbol(),
 			);
 		}
-		return result;
+		this.broadcastResponse(publicResult);
+		this.updateLocalPlayers();
+		return [];
 	}
 
 	_checkWinAround(centerPos, step) {
@@ -239,12 +268,46 @@ class GameSession {
 		return res;
 	}
 
-	fetchGameState() {
+	setLocalPlayer(client, player) {
+		if (client.localPlayer == player)
+			return [];
+		client.localPlayer = player;
+		return new [messages.SetLocalPlayer(player)];
+	}
+
+	updateLocalPlayers() {
+		for (const client of this.getClients()) {
+			if (client.game != this)
+				continue;
+			const clientId = client.clientId;
+			const isCurrentPlayer = this.isCurrentClient(client);
+			const localPlayer = isCurrentPlayer ? this.currentPlayer : this._clientPlayers.get(clientId)[0];
+			let res = [];
+			if (localPlayer)
+				res = this.setLocalPlayer(client, localPlayer);
+			if (!this.won && isCurrentPlayer)
+				res.push(new messages.WaitSymbol());
+			if (res.length)
+				client.sendResponse(res);
+		}
+	}
+
+	fetchGameState(client) {
 		const res = [
 			new messages.ClearField(),
-			new messages.SetLocalPlayer(this.currentPlayer),
 			new messages.SetCurrentPlayer(this.currentPlayer),
 		];
+		const clientId = client.clientId;
+		if (!this._clientIds.has(clientId)) {
+			console.error('Non-member client ' + clientId + ' is fetching game state of the room ' + this.roomId);
+			return res;
+		}
+		const isCurrentPlayer = this.isCurrentClient(client);
+		const localPlayer = isCurrentPlayer ? this.currentPlayer : this._clientPlayers.get(clientId)[0];
+		if (localPlayer) {
+			client.localPlayer = localPlayer;
+			res.push(new messages.SetLocalPlayer(localPlayer));
+		}
 
 		const boxes = this.field ? this.field.getBoundaries() : [];
 		for (let box of boxes) {
@@ -260,9 +323,12 @@ class GameSession {
 
 		if (this.won)
 			res.push(new messages.WinGame(this.currentPlayer, this.winLine[0], this.winLine[1]));
-
-		else
+		else if (isCurrentPlayer)
 			res.push(new messages.WaitSymbol());
+
+		for (const pendingClientId of this._pendingClients)
+			res.push(new messages.JoinRoomRequest(pendingClientId));
+
 		return res;
 	}
 
@@ -276,28 +342,45 @@ class GameSession {
 		this.existingSymbolsBounds = [[0, 0], [0, 0]];
 		return [
 			new messages.ClearField(),
-			new messages.SetLocalPlayer(1),
 			new messages.SetCurrentPlayer(1),
-			new messages.WaitSymbol(),
 		];
 	}
 
 	msg_newGame(client, msg) {
-		client.sendResponse(
-			this.restartGame()
-		);
+		this.broadcastResponse(this.restartGame());
+		this.updateLocalPlayers();
 	}
 
 	msg_fetchGameState(client, msg) {
 		client.sendResponse(
-			this.fetchGameState()
+			this.fetchGameState(client)
 		);
 	}
 
 	msg_placeSymbol(client, msg) {
-		client.sendResponse(
-			this.tryPlaceSymbol(msg.x, msg.y)
-		);
+		const res = this.tryPlaceSymbol(client, msg.x, msg.y);
+		if (res.length)
+			client.sendResponse(res);
+	}
+
+	msg_acceptJoinRoom(acceptingClient, msg) {
+		const clientId = msg.id;
+		if (!clientId)
+			return acceptingClient.sendFatal('Missing id argument in acceptJoinRoom');
+		if (!this._pendingClients.has(clientId))
+			return acceptingClient.sendResponse([new messages.ShowError('Client ' + clientId + ' did not request to join')]);
+
+		const newClient = clientRegistry.getById(clientId);
+		if (!newClient)
+			return acceptingClient.sendResponse([new messages.ShowError('Client ' + clientId + ' does not exist anymore')]);
+
+		if (!this.joinClient(newClient)) {
+			acceptingClient.sendResponse([new messages.ShowError('The room is full')]);
+			newClient.sendResponse([new messages.ShowError('Cannot join: the room is full')]);
+			return;
+		}
+		this._pendingClients.delete(clientId);
+		newClient.sendResponse(this.fetchGameState(newClient));
 	}
 
 	register(cb) {
@@ -333,16 +416,73 @@ class GameSession {
 	}
 
 	getClients() {
-		// TODO
-		return [];
+		const clients = [];
+		for (const clientId of this._clientIds) {
+			const client = clientRegistry.getById(clientId);
+			if (client)
+				clients.push(client);
+		}
+		return clients;
 	}
 
 	leaveClient(client) {
-		// TODO
+		const clientId = client.clientId;
+		if (!this._clientIds.has(clientId)) {
+			console.error('Non-member client ' + clientId + ' tried to leave the room ' + this.roomId);
+			return false;
+		}
+		this._clientIds.delete(clientId);
+
+		const players = this._clientPlayers.get(clientId);
+		this._clientPlayers.get(null).push(...players);
+		this._clientPlayers.delete(clientId)
+
+		for (const player of players)
+			this._playerClients.set(player, null);
+
+		client.game = null;
+		return true;
 	}
 
 	joinClient(client) {
-		// TODO
+		if (this._clientIds.size > MAX_CLIENTS)
+			return false;
+		const clientId = client.clientId;
+		if (!clientId) {
+			console.error('Client without id tried to join room ' + this.roomId);
+			return false;
+		}
+		if (this._clientIds.has(clientId))
+			return false;
+
+		if (client.game != this)
+			client.leaveGame();
+		this._clientIds.add(clientId);
+		const players = [];
+		const unallocatedPlayers = this._clientPlayers.get(null);
+		if (unallocatedPlayers.length) {
+			const player = unallocatedPlayers.shift();
+			players.push(player);
+			this._playerClients.set(player, clientId);
+			client.localPlayer = player;
+		}
+		this._clientPlayers.set(clientId, players);
+
+		client.game = this;
+		return true;
+	}
+
+	requestJoin(client) {
+		const clientId = client.clientId;
+		if (!clientId)
+			return client.sendResponse([new messages.ShowError('Not authenticated')]);
+		if (this._clientIds.has(clientId))
+			return client.sendResponse([new messages.ShowError('You are already in the room')]);
+		if (this._clientIds.size > MAX_CLIENTS)
+			return client.sendResponse([new messages.ShowError('The room is full')]);
+
+		this._pendingClients.add(clientId);
+		this.broadcastResponse([new messages.JoinRoomRequest(clientId)]);
 	}
 }
 

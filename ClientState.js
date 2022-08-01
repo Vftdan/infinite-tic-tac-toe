@@ -1,5 +1,6 @@
 const messages = require('./responseMessages.js');
 const registry = require('./clientRegistry.js');
+const gameRegistry = require('./gameRegistry.js');
 const GameSession = require('./GameSession.js');
 
 const knownMethods = new Set([
@@ -73,6 +74,14 @@ class ClientState {
 			this.game[key](this, msg);
 	}
 
+	checkAuthentication() {
+		if (!this.registered) {
+			this.sendResponse(new ShowError('Not authenticated'));
+			return false;
+		}
+		return true;
+	}
+
 	msg_register(msg) {
 		this.register();
 	}
@@ -87,6 +96,8 @@ class ClientState {
 	}
 
 	msg_hostGame(msg) {
+		if (!this.checkAuthentication())
+			return;
 		this.getHostedGame((err, game) => {
 			if (err) {
 				console.error(err);
@@ -102,8 +113,17 @@ class ClientState {
 				new messages.SetRoomId(game.roomId),
 			]);
 			this.joinGame(game);
-			this.sendResponse(game.fetchGameState());
+			this.sendResponse(game.fetchGameState(this));
 		});
+	}
+
+	msg_joinRoom(msg) {
+		if (!this.checkAuthentication())
+			return;
+		const game = gameRegistry.getById(msg.id);
+		if (!game)
+			return this.sendResponse([new messages.ShowError('Room doesn\'t exist')]);
+		game.requestJoin(this);
 	}
 
 	_authCompleteMessages() {
