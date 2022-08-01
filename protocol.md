@@ -17,6 +17,20 @@ For network transmission messages are encoded as JSON and sent via text WebSocke
 
 Request the server to send all the events needed to syncronize client with server's game state no matter what client's current state is.
 
+### `hostGame`
+
+Can only be sent after `hostGameAvailable` call.
+
+### `joinRoom`
+
+Can only be sent after `joinRoomAvailable` call.
+
+ * `id`: string, id of the room
+
+### `acceptJoinRoom`
+
+ * `id`: string, id of the client
+
 ### `newGame`
 
 ### `placeSymbol`
@@ -34,6 +48,22 @@ When sending this event, field ui should be locked from placing new symbols by u
 
  * `id`: string
  * `token`: string
+
+### `hostGameAvailable`
+
+Sent by a server that implements `hostGame` method.
+
+### `joinRoomAvailable`
+
+Sent by a server that implements `joinRoom` method.
+
+### `setRoomId`
+
+ * `id`: string, id of the room
+
+### `joinRoomRequest`
+
+ * `id`: string, id of the client
 
 ### `clearField`
 
