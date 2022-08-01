@@ -7,6 +7,14 @@ const messages = {
 	ShowError: function(text) {
 		this.text = text;
 	},
+	HostGameAvailable: function() {},
+	JoinRoomAvailable: function() {},
+	SetRoomId: function(id) {
+		this.id = id;
+	},
+	JoinRoomRequest: function(id) {
+		this.id = id;
+	},
 	// Game:
 	ClearField: function() {},
 	PlaceSymbol: function(x, y, symbol) {

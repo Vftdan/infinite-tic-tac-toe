@@ -5,6 +5,9 @@ const GameSession = require('./GameSession.js');
 const knownMethods = new Set([
 	'register',
 	'login',
+	'hostGame',
+	'joinRoom',
+	'acceptJoinRoom',
 	// Game:
 	'newGame',
 	'fetchGameState',
