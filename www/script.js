@@ -148,11 +148,46 @@ addEventListener('load', function() {
 		canvas: document.createElement('canvas'),
 		controlsContainer: document.getElementById('controls'),
 		messagesContainer: document.getElementById('messages'),
-		showMessage: function(type, content) {
+		showMessage: function(type, content, opts) {
 			var oldHeight = app.messagesContainer.scrollHeight;
 			var p = document.createElement('p');
 			p.className = 'message-' + type;
 			p.innerText = content;
+
+			if (opts) {
+				if (opts.spoilerText) {
+					var spoiler = document.createElement('span');
+					spoiler.className = 'spoiler';
+					spoiler.innerText = opts.spoilerText;
+					p.appendChild(spoiler);
+				}
+
+				if (opts.buttons) {
+					for (var i = 0; i < opts.buttons.length; ++i) {
+						var buttonOpts = opts.buttons[i];
+						var button = document.createElement('input');
+						button.type = 'button';
+						button.value = buttonOpts.text;
+						var handler = buttonOpts.handler;
+						if (handler)
+							button.addEventListener('click', handler, false);
+						p.appendChild(button);
+					}
+				}
+
+				if (opts.prompt) {
+					var input = document.createElement('input');
+					var button = document.createElement('input');
+					button.type = 'button';
+					button.value = opts.prompt.submitText;
+					var handler = opts.prompt.handler;
+					if (handler)
+						button.addEventListener('click', function(e) {handler(input.value, e, input);}, false);
+					p.appendChild(input);
+					p.appendChild(button);
+				}
+			}
+
 			app.messagesContainer.appendChild(p);
 			app.messagesContainer.scrollTop += app.messagesContainer.scrollHeight - oldHeight;
 		},
