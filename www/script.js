@@ -673,6 +673,7 @@ addEventListener('load', function() {
 							app.scene._elements.push(new app.shapes.Grid(1));
 							app.scene._elements.push(new app.shapes.TicTacToeSymbols(this.field));
 							fieldDirty = true;
+							this.waitSymbol = false;
 							break;
 						case 'placeSymbol':
 							this.field.setAt(msg.x | 0, msg.y | 0, msg.symbol);
@@ -702,8 +703,10 @@ addEventListener('load', function() {
 							break;
 						// Non-game:
 						case 'authComlete':
-							app.showMessage('info', 'Authenticated');
-							break;
+						case 'setRoomId':
+						case 'joinRoomRequest':
+						case 'hostGameAvailable':
+						case 'joinRoomAvailable':
 						case 'setCredentials':
 							break;
 						default:
@@ -992,6 +995,18 @@ addEventListener('load', function() {
 								case 'setCredentials':
 									this.saveCredentials(arr[i].id, arr[i].token);
 									break;
+								case 'setRoomId':
+									this.setRoomId(arr[i].id);
+									break;
+								case 'joinRoomRequest':
+									this.showJoinRoomRequest(arr[i].id);
+									break;
+								case 'hostGameAvailable':
+									this.showHostGameUI();
+									break;
+								case 'joinRoomAvailable':
+									this.showJoinRoomUI();
+									break;
 								default:
 									break;
 							}
@@ -1011,6 +1026,28 @@ addEventListener('load', function() {
 							return;
 						localStorage.setItem('TicTacToe_credentials', JSON.stringify({id: id, token: token}));
 					},
+					setRoomId: function(roomId) {
+						app.showMessage('info', 'Your room can be joined by id ', {spoilerText: roomId});
+					},
+					showJoinRoomRequest: function(clientId) {
+						var backend = this;
+						app.showMessage('info', 'Client with id ' + clientId + ' wants to join', {buttons: [
+							{text: 'Accept', handler: function(e) {backend.sendMessage({method: 'acceptJoinRoom', id: clientId});}},
+						]});
+					},
+					showHostGameUI: function() {
+						var backend = this;
+						app.showMessage('info', 'You can create a room: ', {buttons: [
+							{text: 'New room', handler: function(e) {backend.sendMessage({method: 'hostGame'});}},
+						]});
+					},
+					showJoinRoomUI: function() {
+						var backend = this;
+						app.showMessage('info', 'You can an existing room by id: ', {prompt: {
+							submitText: 'Join',
+							handler: function(id) {backend.sendMessage({method: 'joinRoom', id: id});}
+						}});
+					},
 					sendMessageUnauthenticated: function(msg) {
 						var ws = this.getWs();
 						var txt = JSON.stringify(msg);
@@ -1024,6 +1061,12 @@ addEventListener('load', function() {
 					},
 					onAuthComplete: function() {
 						this.authenticated = true;
+
+						var creds = this.getSavedCredentials();
+						if (creds) {
+							app.showMessage('info', 'Authenticated with client id ' + creds.id);
+						}
+
 						while (this.authCompleteHandlers.length) {
 							var handler = this.authCompleteHandlers.shift();
 							if (typeof(handler) != 'function')
