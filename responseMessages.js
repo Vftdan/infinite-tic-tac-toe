@@ -7,6 +7,9 @@ const messages = {
 	ShowError: function(text) {
 		this.text = text;
 	},
+	ShowInfo: function(text) {
+		this.text = text;
+	},
 	HostGameAvailable: function() {},
 	JoinRoomAvailable: function() {},
 	SetRoomId: function(id) {

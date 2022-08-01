@@ -696,6 +696,9 @@ addEventListener('load', function() {
 							console.error('Received error: ' + msg.text);
 							app.showMessage('error', msg.text);
 							break;
+						case 'showInfo':
+							app.showMessage('info', msg.text);
+							break;
 						case 'winGame':
 							app.scene._elements.push(new app.shapes.LineSegment(msg.start.x + .5, msg.start.y + .5, msg.end.x + .5, msg.end.y + .5));
 							this.won = true;
@@ -947,6 +950,9 @@ addEventListener('load', function() {
 							},
 							WaitSymbol: function() {},
 							ShowError: function(text) {
+								this.text = text;
+							},
+							ShowInfo: function(text) {
 								this.text = text;
 							},
 							WinGame: function(player, startPos, endPos) {

@@ -94,6 +94,10 @@ Is expected to be sent with `setCurrentPlayer` equal to local player.
 
  * `text`: string
 
+### `showInfo`
+
+ * `text`: string
+
 ### `winGame`
 
 Sent when any player wins the game.
