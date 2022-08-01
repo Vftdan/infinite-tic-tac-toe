@@ -22,6 +22,8 @@ class ClientState {
 	lastActive = null;
 	registered = false;
 	_queued = [];
+	_hostedGame = null;
+	_hostedRoomIdSent = false;  // should not be copied to a reconnected client
 
 	constructor() {
 		this.setActive();
@@ -95,11 +97,11 @@ class ClientState {
 				this.sendResponse([new messages.ShowError('Room creation is already in progress')]);
 				return;
 			}
+			this._hostedRoomIdSent = true;
 			this.queueResponse([
 				new messages.SetRoomId(game.roomId),
 			]);
-			this.game = game;
-			game.joinClient(this);
+			this.joinGame(game);
 			this.sendResponse(game.fetchGameState());
 		});
 	}
@@ -163,6 +165,7 @@ class ClientState {
 		this.clientToken = token;
 		registry.put(this);
 		this.game = oldClient.game;
+		this._hostedGame = oldClient._hostedGame;
 		this.sendResponse(this._authCompleteMessages());
 	}
 
@@ -174,12 +177,24 @@ class ClientState {
 		game.leaveClient(this);
 	}
 
+	joinGame(game) {
+		if (this.game)
+			this.leaveGame();
+		this.game = game;
+		game.joinClient(this);
+	}
+
 	getHostedGame(cb) {
 		try {
-			if (!this._hostedGame) {
-				var game = new GameSession();
+			if (!this._hostedGame || this._hostedRoomIdSent) {
+				var game = this._hostedGame;
+				if (game) {
+					game.unregister();
+				} else {
+					game = new GameSession();
+					game.restartGame();
+				}
 				this._hostedGame = game;
-				game.restartGame();
 				game.register((err) => {
 					if (err) {
 						this._hostedGame = null;

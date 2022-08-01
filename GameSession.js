@@ -319,10 +319,11 @@ class GameSession {
 		if (!this.registered)
 			return;
 		registry.removeId(this.roomId);
+		this.registered = false;
 		var clients = this.getClients();
 		for (let client of clients) {
 			if (client.game == this) {
-				client.game = null;
+				client.leaveGame();
 				client.sendResponse([
 					new messages.ClearField(),
 					new messages.ShowError('The room was closed'),
