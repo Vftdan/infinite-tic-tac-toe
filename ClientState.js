@@ -84,6 +84,34 @@ class ClientState {
 			this.sendResponse([new messages.ClearField()]);
 	}
 
+	msg_hostGame(msg) {
+		this.getHostedGame((err, game) => {
+			if (err) {
+				console.error(err);
+				this.sendResponse([new messages.ShowError('Failed to create a room')]);
+				return;
+			}
+			if (!game.registered) {
+				this.sendResponse([new messages.ShowError('Room creation is already in progress')]);
+				return;
+			}
+			this.queueResponse([
+				new messages.SetRoomId(game.roomId),
+			]);
+			this.game = game;
+			game.joinClient(this);
+			this.sendResponse(game.fetchGameState());
+		});
+	}
+
+	_authCompleteMessages() {
+		return [
+			new messages.AuthComlete(),
+			new messages.HostGameAvailable(),
+			new messages.JoinRoomAvailable(),
+		];
+	}
+
 	register() {
 		if (this.registered)
 			return this.sendFatal('Already registered');
@@ -102,12 +130,9 @@ class ClientState {
 				}
 				this.clientToken = token;
 				registry.put(this);
-				this.game = new GameSession();
-				this.game.restartGame();
 				this.sendResponse([
 					new messages.SetCredentials(id, token),
-					new messages.AuthComlete(),
-				]);
+				].concat(this._authCompleteMessages()));
 			});
 		});
 	}
@@ -138,9 +163,36 @@ class ClientState {
 		this.clientToken = token;
 		registry.put(this);
 		this.game = oldClient.game;
-		this.sendResponse([
-			new messages.AuthComlete(),
-		]);
+		this.sendResponse(this._authCompleteMessages());
+	}
+
+	leaveGame() {
+		if (!this.game)
+			return;
+		var game = this.game;
+		this.game = null;
+		game.leaveClient(this);
+	}
+
+	getHostedGame(cb) {
+		try {
+			if (!this._hostedGame) {
+				var game = new GameSession();
+				this._hostedGame = game;
+				game.restartGame();
+				game.register((err) => {
+					if (err) {
+						this._hostedGame = null;
+						return cb(err);
+					}
+					cb(null, game);
+				});
+			} else {
+				cb(null, this._hostedGame);
+			}
+		} catch (err) {
+			cb(err);
+		}
 	}
 }
 

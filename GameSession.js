@@ -1,4 +1,5 @@
 const messages = require('./responseMessages.js');
+const registry = require('./gameRegistry.js');
 
 const CellContent = {
 	EMPTY: 0,
@@ -15,6 +16,7 @@ class Chunk {
 	_data = new Uint8Array(CHUNK_SIDE * CHUNK_SIDE / CELLS_PER_BYTE);
 	x = null;
 	y = null;
+	roomId = null;
 
 	constructor(x, y) {
 		this.x = x;
@@ -296,6 +298,50 @@ class GameSession {
 		client.sendResponse(
 			this.tryPlaceSymbol(msg.x, msg.y)
 		);
+	}
+
+	register(cb) {
+		if (!cb)
+			cb = (err) => {if (err) throw err;};
+		if (this.registered)
+			return cb(new Error('Already registered'));
+		registry.generateId((err, id) => {
+			if (err) {
+				return cb(err);
+			}
+			this.roomId = id;
+			registry.put(this);
+			cb();
+		});
+	}
+
+	unregister() {
+		if (!this.registered)
+			return;
+		registry.removeId(this.roomId);
+		var clients = this.getClients();
+		for (let client of clients) {
+			if (client.game == this) {
+				client.game = null;
+				client.sendResponse([
+					new messages.ClearField(),
+					new messages.ShowError('The room was closed'),
+				]);
+			}
+		}
+	}
+
+	getClients() {
+		// TODO
+		return [];
+	}
+
+	leaveClient(client) {
+		// TODO
+	}
+
+	joinClient(client) {
+		// TODO
 	}
 }
 
