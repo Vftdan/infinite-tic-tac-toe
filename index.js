@@ -50,4 +50,5 @@ const server = http.createServer((req, res) => {
 const wss = new ws.Server({server: server, path: '/' + wsPath});
 websocketHandling(wss);
 
+console.log('Starting the server on port ' + PORT);
 server.listen(PORT);
