@@ -1043,7 +1043,7 @@ addEventListener('load', function() {
 					},
 					showJoinRoomUI: function() {
 						var backend = this;
-						app.showMessage('info', 'You can an existing room by id: ', {prompt: {
+						app.showMessage('info', 'You can join an existing room by id: ', {prompt: {
 							submitText: 'Join',
 							handler: function(id) {backend.sendMessage({method: 'joinRoom', id: id});}
 						}});
